@@ -1,0 +1,102 @@
+name: watchstream
+
+x-app: &app
+  image: watchstream-app:local
+  build: .
+  working_dir: /var/www/html
+  volumes:
+    - .:/var/www/html
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 90s
+  depends_on:
+    mysql:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8000"
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8000/up') === false ? 1 : 0);"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  worker:
+    <<: *app
+    command: ["php", "artisan", "horizon"]
+
+  scheduler:
+    <<: *app
+    command: ["php", "artisan", "schedule:work"]
+
+  ingestor:
+    <<: *app
+    command: ["php", "artisan", "chat:consume"]
+
+  pulse:
+    <<: *app
+    command: ["php", "artisan", "pulse:check"]
+
+  mysql:
+    image: mysql:8.4@sha256:a0225d1ea6631c8bc2385dc4c2faba17bbf1834ecf369e1659a9a382bd8d5dd7
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-watchstream}
+      MYSQL_USER: ${DB_USERNAME:-watchstream}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Configure DB_PASSWORD no .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Configure DB_ROOT_PASSWORD no .env}
+      TZ: UTC
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$$MYSQL_USER" "$$MYSQL_DATABASE" -e "SELECT 1" >/dev/null 2>&1']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:7.4@sha256:b6b6e3dc0c0952737748e55d5d885272840c7e42ba41ab1d5489f693419882f5
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  node:
+    image: node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+    profiles: ["tools"]
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+      - node_modules:/var/www/html/node_modules
+    command: ["npm", "run", "build"]
+
+  vite:
+    image: node:24-bookworm-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
+    profiles: ["frontend"]
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+      - node_modules:/var/www/html/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+volumes:
+  mysql_data:
+    name: ${MYSQL_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-watchstream}_mysql_data}
+  redis_data:
+    name: ${REDIS_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-watchstream}_redis_data}
+  node_modules:
+    name: ${NODE_VOLUME_NAME:-${COMPOSE_PROJECT_NAME:-watchstream}_node_modules}

@@ -1,0 +1,52 @@
+<?php
+
+return [
+    'domain' => env('HORIZON_DOMAIN'),
+    'path' => 'horizon',
+    'use' => 'default',
+    'prefix' => env('HORIZON_PREFIX', 'watchstream_horizon:'),
+    'middleware' => ['web'],
+    'waits' => ['redis:chat' => 60, 'redis:points' => 60, 'redis:redemptions' => 30],
+    'trim' => [
+        'recent' => 60,
+        'pending' => 60,
+        'completed' => 60,
+        'recent_failed' => 10080,
+        'failed' => 10080,
+        'monitored' => 10080,
+    ],
+    'silenced' => [],
+    'metrics' => ['trim_snapshots' => ['job' => 24, 'queue' => 24]],
+    'fast_termination' => false,
+    'memory_limit' => 128,
+    'defaults' => [
+        'processing' => [
+            'connection' => 'redis',
+            'queue' => ['chat', 'points', 'default'],
+            'balance' => 'auto',
+            'autoScalingStrategy' => 'time',
+            'maxProcesses' => 2,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 3,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
+        'redemptions' => [
+            'connection' => 'redis',
+            'queue' => ['redemptions'],
+            'balance' => false,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 3,
+            'timeout' => 60,
+            'nice' => 0,
+        ],
+    ],
+    'environments' => [
+        'local' => ['processing' => [], 'redemptions' => []],
+    ],
+];
